@@ -133,14 +133,23 @@
   // ===== 微小ドリフト =====
   function drift(x,y,t){ var s=0.0009; var u=Math.sin((x*0.01)+t*0.6)+Math.cos((y*0.012)-t*0.4); var v=Math.cos((x*0.008)-t*0.5)-Math.sin((y*0.01)+t*0.7); return {dx:u*s, dy:v*s}; }
 
-  // ===== 画像（猫）: ロードガードを追加して drawImage エラーを防止 =====
+  // ===== 画像（猫）: ロードガード + 経路フォールバック + リトライ =====
   var catImg = new Image();
-  var catReady = false;   // ロード完了フラグ
-  var catError = false;   // ロード失敗フラグ
-  // 画像は HTML と同じ階層に置いてください
-  catImg.onload = function(){ catReady = true; };
-  catImg.onerror = function(){ catError = true; console.warn('[catImg] 画像の読み込みに失敗しました。cataan.png のパスを確認してください。'); };
-  catImg.src = 'cataan.png';
+  var catReady = false;   // ロード完了
+  var catError = false;   // 失敗状態
+  var CAT_TRIES = ['cataan.png','./cataan.png','assets/cataan.png','./images/cataan.png'];
+  var catTryIndex = 0;
+  function tryLoadNext(reason){
+    if (catTryIndex >= CAT_TRIES.length) { catError = true; ui.msg.textContent = '😿 画像を読み込めませんでした（cataan.png）'; return; }
+    var src = CAT_TRIES[catTryIndex++];
+    catReady = false; catError = false;
+    catImg.onload = function(){ catReady = true; ui.msg.textContent = ''; };
+    catImg.onerror = function(){ ui.msg.textContent = '画像読み込み失敗: ' + src + (reason? ' ('+reason+')':'' ); setTimeout(function(){ tryLoadNext('fallback'); }, 300); };
+    // GitHub Pages のキャッシュ強制回避（404/更新時の取りこぼし対策）
+    var bust = (Date.now()%1e7).toString(36);
+    catImg.src = src + '?v=' + bust;
+  }
+  tryLoadNext();
   var MOUTH_NX = 0.50;   // 画像内・口のX位置（0..1, 左=0 右=1）
   var MOUTH_NY = 0.45;   // 画像内・口のY位置（0..1, 上=0 下=1）
   var IMG_SCALE = 0.42;  // 画面幅に対する画像幅の比率（調整用）
@@ -157,19 +166,43 @@
     buildGrid(); softCollisions();
   }
 
-  // ===== 星背景 =====
-  var starField = Array.from({length:80},function(){ return { x:Math.random(), y:Math.random(), s:Math.random()*2+0.5, a:Math.random()*0.4+0.05 }; });
-  function drawStars(){ ctx.save(); for (var i=0;i<starField.length;i++){ var st=starField[i]; var x=st.x*W, y=st.y*H; ctx.globalAlpha = st.a + Math.sin((performance.now()/1000 + st.x*7 + st.y*3))*0.05; ctx.beginPath(); ctx.arc(x,y,st.s,0,Math.PI*2); ctx.fillStyle='#ffffff'; ctx.fill(); } ctx.restore(); }
+  // ===== 背景画像（固定）: back.png をロードし、未ロード/失敗時はグラデーション =====
+  var bgImg = new Image();
+  var bgReady = false;
+  var bgError = false;
+  var BACK_TRIES = ['back.png','./back.png','assets/back.png','./images/back.png'];
+  var bgTryIndex = 0;
+  function tryLoadBgNext(reason){
+    if (bgTryIndex >= BACK_TRIES.length) { bgError = true; return; }
+    var src = BACK_TRIES[bgTryIndex++];
+    bgReady = false; bgError = false;
+    bgImg.onload = function(){ bgReady = true; };
+    bgImg.onerror = function(){ setTimeout(function(){ tryLoadBgNext('fallback'); }, 300); };
+    var bust = (Date.now()%1e7).toString(36);
+    bgImg.src = src + '?v=' + bust;
+  }
+  tryLoadBgNext();
 
   // ===== 描画 =====
   function draw(){
-    ctx.globalAlpha=0.18; ctx.fillStyle='#0f1220'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
-    drawStars();
+    // 背景: 画像があればカバー描画、無ければグラデーション
+    if (bgReady && !bgError && bgImg.naturalWidth>0 && bgImg.naturalHeight>0) {
+      var iw=bgImg.naturalWidth, ih=bgImg.naturalHeight;
+      var scale = Math.max(W/iw, H/ih);
+      var dw = iw*scale, dh = ih*scale;
+      var dx = (W - dw)/2, dy = (H - dh)/2;
+      try { ctx.drawImage(bgImg, dx, dy, dw, dh); } catch(e){}
+    } else {
+      var grad = ctx.createLinearGradient(0,0,0,H);
+      grad.addColorStop(0,'#161a2d'); grad.addColorStop(1,'#0f1220');
+      ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
+    }
 
     // 穴（透明）: 描画しない。座標だけ取得
     var h = hole();
 
-    // 猫画像は "ロード完了かつ実寸が得られている" ときのみ描画
+    // 猫画像: ロード済みのときのみ描画。未ロード/失敗時はプレースホルダを表示
+    var imgDrawn = false;
     if (catReady && !catError && catImg.naturalWidth > 0 && catImg.naturalHeight > 0) {
       var imgW = Math.min(W * IMG_SCALE, 420);
       var imgH = imgW * (catImg.naturalHeight / catImg.naturalWidth);
@@ -177,8 +210,21 @@
       var mouthY = imgH * MOUTH_NY;
       var drawX = h.x - mouthX;
       var drawY = h.y - mouthY;
-      try { ctx.drawImage(catImg, drawX, drawY, imgW, imgH); }
-      catch(err){ /* 万一ここで例外が出てもゲームを継続 */ console.warn('[drawImage] skipped:', err); }
+      try { ctx.drawImage(catImg, drawX, drawY, imgW, imgH); imgDrawn = true; }
+      catch(err){ console.warn('[drawImage] skipped:', err); }
+    }
+    if (!imgDrawn){
+      var phW = Math.min(W * IMG_SCALE, 420);
+      var phH = phW * 1.0;
+      var phX = h.x - phW * MOUTH_NX;
+      var phY = h.y - phH * MOUTH_NY;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.setLineDash([6,4]);
+      ctx.strokeRect(phX, phY, phW, phH);
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(h.x, h.y, 4, 0, Math.PI*2); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill();
+      ctx.restore();
     }
 
     // ボール（不透明な茶色）
@@ -203,6 +249,10 @@
     // 3) 基本 API の正当性
     t('Canvas 取得OK', !!canvas && !!ctx);
     t('タップ発射API定義', typeof spawnBurst==='function');
+    t('loop 定義', typeof loop==='function');
+    // 背景が壊れていても draw が落ちない
+    var sBg = {r:bgReady, e:bgError}; bgReady=false; bgError=true; try{ draw(); t('壊れ背景でも draw が落ちない', true); }catch(e){ t('壊れ背景でも draw が落ちない', false, String(e)); } bgReady=sBg.r; bgError=sBg.e;
+
     console.table(results);
   })();
   </script>
