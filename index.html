@@ -25,24 +25,23 @@
 <body>
   <div id="ui">
     <div class="panel" style="gap:14px">
-      <span>🎯 入った数: <b id="score">0</b></span>
+      <span>入った数: <b id="score">0</b></span>
       <span id="message"></span>
     </div>
   </div>
 
   <canvas id="canvas"></canvas>
 
-  <div id="footer"><div id="tip">画面のどこでも<strong>タップで一斉発射（50個）</strong><br>300個穴に入るとクリア。穴は透明ですが判定は有効です。<br>画像 <code>cataan.png</code> の口位置に穴を合わせています。</div></div>
+  <div id="footer"><div id="tip">画面のどこでも<strong>タップで一斉発射（50個）</strong><br>300個穴に入るとクリア。穴は透明ですが判定は有効です。<br>背景: back.png / 猫画像: cataan.png</div></div>
 
   <script>
-  // ===== 固定定数（再宣言ガード） =====
-  if (typeof window.SPEED === 'undefined') window.SPEED = 1.5;   // 速度（ゆっくり）
-  if (typeof window.SPREAD_DEG === 'undefined') window.SPREAD_DEG = 22; // 角度ばらつき（±deg）
-  if (typeof window.HOLE_RADIUS === 'undefined') window.HOLE_RADIUS = 52; // 穴半径（描画はしない）
-  if (typeof window.BALLS_COUNT === 'undefined') window.BALLS_COUNT = 50; // 一斉発射数
+  // ===== 固定定数 =====
+  if (typeof window.SPEED === 'undefined') window.SPEED = 1.5;
+  if (typeof window.SPREAD_DEG === 'undefined') window.SPREAD_DEG = 22;
+  if (typeof window.HOLE_RADIUS === 'undefined') window.HOLE_RADIUS = 52;
+  if (typeof window.BALLS_COUNT === 'undefined') window.BALLS_COUNT = 50;
   var SPEED = window.SPEED, SPREAD_DEG = window.SPREAD_DEG, HOLE_RADIUS = window.HOLE_RADIUS, BALLS_COUNT = window.BALLS_COUNT;
 
-  // ===== キャンバス =====
   var canvas = document.getElementById('canvas');
   var ctx = canvas.getContext('2d');
   var DPR = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
@@ -55,17 +54,14 @@
   }
   window.addEventListener('resize', resize); resize();
 
-  // ===== UI refs =====
   var ui = { score: document.getElementById('score'), msg: document.getElementById('message') };
 
-  // ===== 状態 =====
   var state = {
     balls: [], scored: 0, roundActive: false, clear:false,
     aim: { fromX:null, fromY:null, toX:null, toY:null, active:false },
     t:0
   };
 
-  // ===== 入力：画面どこでもタップで発射 =====
   var pointer = { down:false, x:0, y:0 };
   function setAimFromPointer(){ state.aim.fromX=W/2; state.aim.fromY=H-60; state.aim.toX=pointer.x; state.aim.toY=pointer.y; state.aim.active=true; }
   function isUiTarget(el){ return !!(el && el.closest && el.closest('#ui, #tip')); }
@@ -84,7 +80,6 @@
   document.addEventListener('mouseup', onUp);
   document.addEventListener('touchend', onUp);
 
-  // ===== 乱数 / ボール =====
   var RNG = { rand:(a,b)=>a+Math.random()*(b-a) };
   var BALL_R = 5;
   function makeBall(x,y,vx,vy){ return {x:x,y:y,vx:vx,vy:vy,r:BALL_R,alive:true,scored:false}; }
@@ -101,11 +96,9 @@
     state.roundActive=true; ui.msg.textContent='発射！';
   }
 
-  // ===== 当たり判定（穴は見えないが有効） =====
   function hole(){ return { x:W/2, y:Math.max(70,H*0.22), r:HOLE_RADIUS }; }
   function checkScored(b){ var h=hole(); var dx=b.x-h.x, dy=b.y-h.y; var dist=Math.hypot(dx,dy); return dist <= (h.r - b.r); }
 
-  // ===== 簡易衝突（やや滑らか） =====
   var grid = new Map(); var CELL = BALL_R*3;
   function cellKey(x,y){ return ((x/CELL)|0)+','+((y/CELL)|0); }
   function buildGrid(){ grid.clear(); var arr=state.balls; for(var i=0;i<arr.length;i++){ var b=arr[i]; if(!b.alive) continue; var k=cellKey(b.x,b.y); if(!grid.has(k)) grid.set(k,[]); grid.get(k).push(i); } }
@@ -130,43 +123,9 @@
     }
   } }
 
-  // ===== 微小ドリフト =====
   function drift(x,y,t){ var s=0.0009; var u=Math.sin((x*0.01)+t*0.6)+Math.cos((y*0.012)-t*0.4); var v=Math.cos((x*0.008)-t*0.5)-Math.sin((y*0.01)+t*0.7); return {dx:u*s, dy:v*s}; }
 
-  // ===== 画像（猫）: ロードガード + 経路フォールバック + リトライ =====
-  var catImg = new Image();
-  var catReady = false;   // ロード完了
-  var catError = false;   // 失敗状態
-  var CAT_TRIES = ['cataan.png','./cataan.png','assets/cataan.png','./images/cataan.png'];
-  var catTryIndex = 0;
-  function tryLoadNext(reason){
-    if (catTryIndex >= CAT_TRIES.length) { catError = true; ui.msg.textContent = '😿 画像を読み込めませんでした（cataan.png）'; return; }
-    var src = CAT_TRIES[catTryIndex++];
-    catReady = false; catError = false;
-    catImg.onload = function(){ catReady = true; ui.msg.textContent = ''; };
-    catImg.onerror = function(){ ui.msg.textContent = '画像読み込み失敗: ' + src + (reason? ' ('+reason+')':'' ); setTimeout(function(){ tryLoadNext('fallback'); }, 300); };
-    // GitHub Pages のキャッシュ強制回避（404/更新時の取りこぼし対策）
-    var bust = (Date.now()%1e7).toString(36);
-    catImg.src = src + '?v=' + bust;
-  }
-  tryLoadNext();
-  var MOUTH_NX = 0.50;   // 画像内・口のX位置（0..1, 左=0 右=1）
-  var MOUTH_NY = 0.45;   // 画像内・口のY位置（0..1, 上=0 下=1）
-  var IMG_SCALE = 0.42;  // 画面幅に対する画像幅の比率（調整用）
-
-  // ===== ループ =====
-  var last=performance.now();
-  function step(){
-    var now=performance.now(); var dt=(now-last)/1000; if(dt>0.05) dt=0.05; last=now; state.t+=dt;
-    for (var i=0;i<state.balls.length;i++){
-      var b=state.balls[i]; if(!b.alive) continue; var d=drift(b.x,b.y,state.t); b.vx+=d.dx; b.vy+=d.dy; b.x+=b.vx; b.y+=b.vy;
-      var e=0.995; if(b.x<b.r){ b.x=b.r; b.vx=-b.vx*e; } if(b.x>W-b.r){ b.x=W-b.r; b.vx=-b.vx*e; } if(b.y<b.r){ b.y=b.r; b.vy=-b.vy*e; } if(b.y>H-b.r){ b.y=H-b.r; b.vy=-b.vy*e; }
-      if(!b.scored && checkScored(b)){ b.scored=true; b.alive=false; state.scored++; ui.score.textContent=state.scored; if(state.scored>=300 && !state.clear){ state.clear=true; ui.msg.textContent='🎉 クリア！300個入りました！'; } }
-    }
-    buildGrid(); softCollisions();
-  }
-
-  // ===== 背景画像（固定）: back.png をロードし、未ロード/失敗時はグラデーション =====
+  // ===== 背景画像（固定） =====
   var bgImg = new Image();
   var bgReady = false;
   var bgError = false;
@@ -183,9 +142,28 @@
   }
   tryLoadBgNext();
 
-  // ===== 描画 =====
+  // ===== 猫画像 =====
+  var catImg = new Image();
+  var catReady = false;
+  var catError = false;
+  var CAT_TRIES = ['cataan.png','./cataan.png','assets/cataan.png','./images/cataan.png'];
+  var catTryIndex = 0;
+  function tryLoadCatNext(reason){
+    if (catTryIndex >= CAT_TRIES.length) { catError = true; ui.msg.textContent = '😿 猫画像を読み込めませんでした'; return; }
+    var src = CAT_TRIES[catTryIndex++];
+    catReady = false; catError = false;
+    catImg.onload = function(){ catReady = true; ui.msg.textContent = ''; };
+    catImg.onerror = function(){ ui.msg.textContent = '猫画像読み込み失敗: ' + src; setTimeout(function(){ tryLoadCatNext('fallback'); }, 300); };
+    var bust = (Date.now()%1e7).toString(36);
+    catImg.src = src + '?v=' + bust;
+  }
+  tryLoadCatNext();
+  var MOUTH_NX = 0.50; var MOUTH_NY = 0.45; var IMG_SCALE = 0.42;
+
+  var last=performance.now();
+  function step(){ var now=performance.now(); var dt=(now-last)/1000; if(dt>0.05) dt=0.05; last=now; state.t+=dt; for (var i=0;i<state.balls.length;i++){ var b=state.balls[i]; if(!b.alive) continue; var d=drift(b.x,b.y,state.t); b.vx+=d.dx; b.vy+=d.dy; b.x+=b.vx; b.y+=b.vy; var e=0.995; if(b.x<b.r){ b.x=b.r; b.vx=-b.vx*e; } if(b.x>W-b.r){ b.x=W-b.r; b.vx=-b.vx*e; } if(b.y<b.r){ b.y=b.r; b.vy=-b.vy*e; } if(b.y>H-b.r){ b.y=H-b.r; b.vy=-b.vy*e; } if(!b.scored && checkScored(b)){ b.scored=true; b.alive=false; state.scored++; ui.score.textContent=state.scored; if(state.scored>=300 && !state.clear){ state.clear=true; ui.msg.textContent='🎉 クリア！300個入りました！'; } } } buildGrid(); softCollisions(); }
+
   function draw(){
-    // 背景: 画像があればカバー描画、無ければグラデーション
     if (bgReady && !bgError && bgImg.naturalWidth>0 && bgImg.naturalHeight>0) {
       var iw=bgImg.naturalWidth, ih=bgImg.naturalHeight;
       var scale = Math.max(W/iw, H/ih);
@@ -198,10 +176,8 @@
       ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
     }
 
-    // 穴（透明）: 描画しない。座標だけ取得
     var h = hole();
 
-    // 猫画像: ロード済みのときのみ描画。未ロード/失敗時はプレースホルダを表示
     var imgDrawn = false;
     if (catReady && !catError && catImg.naturalWidth > 0 && catImg.naturalHeight > 0) {
       var imgW = Math.min(W * IMG_SCALE, 420);
@@ -213,48 +189,13 @@
       try { ctx.drawImage(catImg, drawX, drawY, imgW, imgH); imgDrawn = true; }
       catch(err){ console.warn('[drawImage] skipped:', err); }
     }
-    if (!imgDrawn){
-      var phW = Math.min(W * IMG_SCALE, 420);
-      var phH = phW * 1.0;
-      var phX = h.x - phW * MOUTH_NX;
-      var phY = h.y - phH * MOUTH_NY;
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-      ctx.setLineDash([6,4]);
-      ctx.strokeRect(phX, phY, phW, phH);
-      ctx.setLineDash([]);
-      ctx.beginPath(); ctx.arc(h.x, h.y, 4, 0, Math.PI*2); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill();
-      ctx.restore();
-    }
 
-    // ボール（不透明な茶色）
     ctx.fillStyle = '#8B4513';
     for (var i=0;i<state.balls.length;i++){ var b=state.balls[i]; if(!b.alive) continue; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); }
   }
 
   function loop(){ step(); draw(); requestAnimationFrame(loop); }
   loop();
-
-  // ===== 追加セルフテスト（開発者向け・自動実行） =====
-  (function runSelfTests(){
-    var results=[]; function t(name,pass,detail){ results.push({name:name,pass:pass,detail:detail||''}); }
-    // 1) 画像が壊れていても draw() が例外を投げない
-    var saved = {ready:catReady, err:catError};
-    catReady=false; catError=true; // 壊れた状態を想定
-    try { draw(); t('壊れ画像でも draw が落ちない', true); } catch(e){ t('壊れ画像でも draw が落ちない', false, String(e)); }
-    // 復元
-    catReady=saved.ready; catError=saved.err;
-    // 2) gate 条件が naturalWidth/Height を見ている
-    t('catImg natural サイズ判定を実施', typeof catImg.naturalWidth==='number' && typeof catImg.naturalHeight==='number');
-    // 3) 基本 API の正当性
-    t('Canvas 取得OK', !!canvas && !!ctx);
-    t('タップ発射API定義', typeof spawnBurst==='function');
-    t('loop 定義', typeof loop==='function');
-    // 背景が壊れていても draw が落ちない
-    var sBg = {r:bgReady, e:bgError}; bgReady=false; bgError=true; try{ draw(); t('壊れ背景でも draw が落ちない', true); }catch(e){ t('壊れ背景でも draw が落ちない', false, String(e)); } bgReady=sBg.r; bgError=sBg.e;
-
-    console.table(results);
-  })();
   </script>
 </body>
 </html>
