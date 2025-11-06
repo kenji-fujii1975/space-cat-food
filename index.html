@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="ja">
 <head>
@@ -31,12 +32,15 @@
   <canvas id="canvas"></canvas>
 
   <script>
+  // ==== 固定定数（再宣言ガード） ====
   if (typeof window.SPEED === 'undefined') window.SPEED = 1.5;
   if (typeof window.SPREAD_DEG === 'undefined') window.SPREAD_DEG = 22;
-  if (typeof window.HOLE_RADIUS === 'undefined') window.HOLE_RADIUS = 42; // ★ 80%小さく（元の52→42）
+  if (typeof window.HOLE_RADIUS === 'undefined') window.HOLE_RADIUS = 42; // 80%に縮小（元52）
   if (typeof window.BALLS_COUNT === 'undefined') window.BALLS_COUNT = 50;
-  var SPEED = window.SPEED, SPREAD_DEG = window.SPREAD_DEG, HOLE_RADIUS = window.HOLE_RADIUS, BALLS_COUNT = window.BALLS_COUNT;
+  if (typeof window.CLEAR_TARGET === 'undefined') window.CLEAR_TARGET = 500; // 500個でクリア
+  var SPEED = window.SPEED, SPREAD_DEG = window.SPREAD_DEG, HOLE_RADIUS = window.HOLE_RADIUS, BALLS_COUNT = window.BALLS_COUNT, CLEAR_TARGET = window.CLEAR_TARGET;
 
+  // ==== キャンバス ====
   var canvas = document.getElementById('canvas');
   var ctx = canvas.getContext('2d');
   var DPR = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
@@ -49,14 +53,18 @@
   }
   window.addEventListener('resize', resize); resize();
 
+  // ==== UI参照 ====
   var ui = { score: document.getElementById('score'), msg: document.getElementById('message') };
 
+  // ==== 状態 ====
   var state = {
     balls: [], scored: 0, roundActive: false, clear:false,
     aim: { fromX:null, fromY:null, toX:null, toY:null, active:false },
-    t:0
+    t:0,
+    gameMode: 'title' // 'title' | 'playing' | 'ending'
   };
 
+  // ==== 入力：画面どこでもタップで発射 or 遷移 ====
   var pointer = { down:false, x:0, y:0 };
   function setAimFromPointer(){ state.aim.fromX=W/2; state.aim.fromY=H-60; state.aim.toX=pointer.x; state.aim.toY=pointer.y; state.aim.active=true; }
   function isUiTarget(el){ return !!(el && el.closest && el.closest('#ui')); }
@@ -65,14 +73,25 @@
     else if(e && e.changedTouches && e.changedTouches[0]){ pointer.x=e.changedTouches[0].clientX; pointer.y=e.changedTouches[0].clientY; }
     else if(e){ pointer.x=e.clientX; pointer.y=e.clientY; }
   }
-  function onDown(e){ if(isUiTarget(e.target)) return; pointer.down=true; updateXY(e); setAimFromPointer(); spawnBurst(); if(e && e.preventDefault) e.preventDefault(); }
+  function onDown(e){
+    if(isUiTarget(e.target)) return;
+    updateXY(e);
+    if (state.gameMode === 'title') { startGame(); }
+    else if (state.gameMode === 'ending') { goTitle(); }
+    else { // playing
+      pointer.down=true; setAimFromPointer(); spawnBurst();
+    }
+    if(e && e.preventDefault) e.preventDefault();
+  }
   document.addEventListener('touchstart', onDown, {passive:false});
   document.addEventListener('mousedown', onDown);
 
+  // ==== 乱数 / ボール ====
   var RNG = { rand:function(a,b){ return a+Math.random()*(b-a); } };
   var BALL_R = 5;
   function makeBall(x,y,vx,vy){ return {x:x,y:y,vx:vx,vy:vy,r:BALL_R,alive:true,scored:false}; }
 
+  // 狙い先（タップしない場合は画面やや上）
   function baseAim(){
     var fromX=W/2, fromY=H-60;
     var tx=(state.aim.toX!=null?state.aim.toX:W/2);
@@ -81,6 +100,7 @@
     return {fromX:fromX,fromY:fromY,baseAng:baseAng};
   }
 
+  // 一斉発射（“丸く固まった”ジッタ付き）
   function spawnBurst(){
     if(state.clear) return;
     var base = baseAim(); var a = base.baseAng; var fromX = base.fromX, fromY = base.fromY;
@@ -101,42 +121,64 @@
     state.roundActive=true; ui.msg.textContent='発射！';
   }
 
+  // ==== 穴：画面中央より少し上（透明） ====
   function hole(){ return { x:W/2, y:Math.max(60, H*0.42), r:HOLE_RADIUS }; }
   function checkScored(b){ var h=hole(); var dx=b.x-h.x, dy=b.y-h.y; var dist=Math.hypot(dx,dy); return dist <= (h.r - b.r); }
 
-  var bgImg = new Image();
-  var catImg = new Image();
-  var bgReady=false, bgError=false, catReady=false, catError=false;
+  // ==== 画像ロード（安全ガード付き） ====
+  var bgImg = new Image(), catImg = new Image(), topImg = new Image(), endImg = new Image();
+  var bgReady=false, bgError=false, catReady=false, catError=false, topReady=false, topError=false, endReady=false, endError=false;
+
+  // GitHub Pages等のキャッシュ回避用クエリ
   var bust = (Date.now()%1e7).toString(36);
 
   bgImg.onload = function(){ bgReady=true; };
-  bgImg.onerror = function(){ bgError=true; };
+  bgImg.onerror = function(){ bgError=true; console.warn('[bgImg] 読み込み失敗: back.png'); };
   bgImg.src = 'back.png?v='+bust;
+
   catImg.onload = function(){ catReady=true; };
-  catImg.onerror = function(){ catError=true; };
+  catImg.onerror = function(){ catError=true; console.warn('[catImg] 読み込み失敗: cataan.png'); };
   catImg.src = 'cataan.png?v='+bust;
 
+  topImg.onload = function(){ topReady=true; };
+  topImg.onerror = function(){ topError=true; console.warn('[topImg] 読み込み失敗: top.png'); };
+  topImg.src = 'top.png?v='+bust;
+
+  endImg.onload = function(){ endReady=true; };
+  endImg.onerror = function(){ endError=true; console.warn('[endImg] 読み込み失敗: end.png'); };
+  endImg.src = 'end.png?v='+bust;
+
+  // 猫画像の中央配置スケール
   var IMG_SCALE = 0.42;
 
+  // ==== メインループ ====
   function step(){
+    if (state.gameMode !== 'playing') return; // タイトル/エンディングでは物理停止
     for (var i=0;i<state.balls.length;i++){
       var b=state.balls[i]; if(!b.alive) continue;
       b.x += b.vx; b.y += b.vy;
+      // 画面端で反射（わずかに減衰）
       var e = 0.995;
       if (b.x < b.r) { b.x = b.r; b.vx = -b.vx * e; }
       if (b.x > W - b.r) { b.x = W - b.r; b.vx = -b.vx * e; }
       if (b.y < b.r) { b.y = b.r; b.vy = -b.vy * e; }
       if (b.y > H - b.r) { b.y = H - b.r; b.vy = -b.vy * e; }
+      // スコア判定
       if(!b.scored && checkScored(b)){
         b.scored=true; b.alive=false;
         state.scored++;
         ui.score.textContent=state.scored;
-        if(state.scored>=300 && !state.clear){ state.clear=true; ui.msg.textContent='🎉 クリア！300個入りました！'; }
+        if(state.scored>=CLEAR_TARGET && !state.clear){
+          state.clear=true;
+          state.gameMode='ending';
+          ui.msg.textContent='🎉 クリア！';
+        }
       }
     }
   }
 
   function draw(){
+    // 背景
     if (bgReady && !bgError && bgImg.naturalWidth>0 && bgImg.naturalHeight>0){
       try { ctx.drawImage(bgImg,0,0,W,H); } catch(e) {}
     } else {
@@ -144,14 +186,34 @@
       grad.addColorStop(0,'#161a2d'); grad.addColorStop(1,'#0f1220');
       ctx.fillStyle = grad; ctx.fillRect(0,0,W,H);
     }
+
+    // 画面状態ごとの描画
+    if (state.gameMode === 'title') {
+      if (topReady && !topError && topImg.naturalWidth>0) {
+        try { ctx.drawImage(topImg, 0,0, W,H); } catch(e) {}
+      }
+      return;
+    }
+
+    if (state.gameMode === 'ending') {
+      if (endReady && !endError && endImg.naturalWidth>0) {
+        try { ctx.drawImage(endImg, 0,0, W,H); } catch(e) {}
+      }
+      return;
+    }
+
+    // playing 中のみ以下を描画
     var h = hole();
+
     if (catReady && !catError && catImg.naturalWidth>0 && catImg.naturalHeight>0){
       var imgW = Math.min(W * IMG_SCALE, 420);
       var imgH = imgW * (catImg.naturalHeight / catImg.naturalWidth);
       var drawX = (W - imgW) / 2;
-      var drawY = (H - imgH) / 2;
+      var drawY = (H - imgH) / 2; // 画面中央
       try { ctx.drawImage(catImg, drawX, drawY, imgW, imgH); } catch(e) {}
     }
+
+    // ボール（不透明な茶色）
     ctx.fillStyle = '#8B4513';
     for (var i=0;i<state.balls.length;i++){
       var b=state.balls[i]; if(!b.alive) continue;
@@ -161,6 +223,11 @@
 
   function loop(){ step(); draw(); requestAnimationFrame(loop); }
   loop();
+
+  // === 画面遷移ユーティリティ ===
+  function resetWorld(){ state.balls.length=0; state.scored=0; state.clear=false; ui.score.textContent=state.scored; ui.msg.textContent=''; }
+  function startGame(){ resetWorld(); state.gameMode='playing'; }
+  function goTitle(){ resetWorld(); state.gameMode='title'; }
   </script>
 </body>
 </html>
