@@ -35,7 +35,6 @@
   <div id="footer"><div id="tip">画面のどこでも<strong>タップで一斉発射（50個）</strong><br>300個穴に入るとクリア。穴は透明ですが判定は有効です。<br>背景: back.png / 猫画像: cataan.png</div></div>
 
   <script>
-  // ===== 固定定数 =====
   if (typeof window.SPEED === 'undefined') window.SPEED = 1.5;
   if (typeof window.SPREAD_DEG === 'undefined') window.SPREAD_DEG = 22;
   if (typeof window.HOLE_RADIUS === 'undefined') window.HOLE_RADIUS = 52;
@@ -125,7 +124,6 @@
 
   function drift(x,y,t){ var s=0.0009; var u=Math.sin((x*0.01)+t*0.6)+Math.cos((y*0.012)-t*0.4); var v=Math.cos((x*0.008)-t*0.5)-Math.sin((y*0.01)+t*0.7); return {dx:u*s, dy:v*s}; }
 
-  // ===== 背景画像（固定） =====
   var bgImg = new Image();
   var bgReady = false;
   var bgError = false;
@@ -142,7 +140,6 @@
   }
   tryLoadBgNext();
 
-  // ===== 猫画像 =====
   var catImg = new Image();
   var catReady = false;
   var catError = false;
@@ -158,7 +155,7 @@
     catImg.src = src + '?v=' + bust;
   }
   tryLoadCatNext();
-  var MOUTH_NX = 0.50; var MOUTH_NY = 0.45; var IMG_SCALE = 0.42;
+  var MOUTH_NX = 0.50; var MOUTH_NY = 0.60; var IMG_SCALE = 0.42;
 
   var last=performance.now();
   function step(){ var now=performance.now(); var dt=(now-last)/1000; if(dt>0.05) dt=0.05; last=now; state.t+=dt; for (var i=0;i<state.balls.length;i++){ var b=state.balls[i]; if(!b.alive) continue; var d=drift(b.x,b.y,state.t); b.vx+=d.dx; b.vy+=d.dy; b.x+=b.vx; b.y+=b.vy; var e=0.995; if(b.x<b.r){ b.x=b.r; b.vx=-b.vx*e; } if(b.x>W-b.r){ b.x=W-b.r; b.vx=-b.vx*e; } if(b.y<b.r){ b.y=b.r; b.vy=-b.vy*e; } if(b.y>H-b.r){ b.y=H-b.r; b.vy=-b.vy*e; } if(!b.scored && checkScored(b)){ b.scored=true; b.alive=false; state.scored++; ui.score.textContent=state.scored; if(state.scored>=300 && !state.clear){ state.clear=true; ui.msg.textContent='🎉 クリア！300個入りました！'; } } } buildGrid(); softCollisions(); }
@@ -178,7 +175,6 @@
 
     var h = hole();
 
-    var imgDrawn = false;
     if (catReady && !catError && catImg.naturalWidth > 0 && catImg.naturalHeight > 0) {
       var imgW = Math.min(W * IMG_SCALE, 420);
       var imgH = imgW * (catImg.naturalHeight / catImg.naturalWidth);
@@ -186,8 +182,7 @@
       var mouthY = imgH * MOUTH_NY;
       var drawX = h.x - mouthX;
       var drawY = h.y - mouthY;
-      try { ctx.drawImage(catImg, drawX, drawY, imgW, imgH); imgDrawn = true; }
-      catch(err){ console.warn('[drawImage] skipped:', err); }
+      try { ctx.drawImage(catImg, drawX, drawY, imgW, imgH); } catch(err){ console.warn('[drawImage] skipped:', err); }
     }
 
     ctx.fillStyle = '#8B4513';
