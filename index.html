@@ -14,17 +14,14 @@
       overscroll-behavior:none; touch-action:none;
     }
     #ui{ position:fixed; inset:env(safe-area-inset-top) 0 auto 0; z-index:10; padding:8px 12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    .panel{ background:rgba(24,28,47,0.75); backdrop-filter: blur(10px); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:8px 10px; display:flex; align-items:center; gap:8px; box-shadow:0 8px 30px rgba(0,0,0,0.3); }
+    .panel{ background:rgba(24,28,47,0.75); backdrop-filter: blur(10px); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:8px 10px; display:flex; align-items:center; gap:10px; box-shadow:0 8px 30px rgba(0,0,0,0.3); }
     .label{ font-size:12px; color:var(--muted); }
-    input[type="range"]{ width:110px; }
-    button{ appearance:none; border:0; background:linear-gradient(180deg,#25d0ff,#0fb1f2); color:#08131b; font-weight:700; padding:10px 14px; border-radius:12px; box-shadow:0 8px 18px rgba(37,208,255,0.35); }
-    button:active{ transform:translateY(1px); }
+    button{ appearance:none; border:0; background:linear-gradient(180deg,#b9bccd,#8f94a8); color:#111; font-weight:700; padding:10px 14px; border-radius:12px; }
     #score{ font-weight:800; letter-spacing:0.5px; }
     #message{ font-size:13px; color:var(--muted); }
     #canvas{ position:fixed; inset:0; width:100vw; height:100vh; display:block; }
     #footer{ position:fixed; inset:auto 0 env(safe-area-inset-bottom) 0; z-index:10; display:flex; justify-content:center; pointer-events:none; }
     #tip{ pointer-events:auto; margin:10px; padding:8px 12px; border-radius:12px; background:rgba(24,28,47,0.6); border:1px solid rgba(255,255,255,0.08); font-size:12px; color:var(--muted); }
-    .toggle{ display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
     #testbar{ position:fixed; right:8px; bottom:calc(8px + env(safe-area-inset-bottom)); z-index:20; }
     #testbtn{ background:linear-gradient(180deg,#b9bccd,#8f94a8); color:#111; box-shadow:none; font-size:12px; padding:8px 10px; }
   </style>
@@ -32,245 +29,183 @@
 <body>
   <div id="ui">
     <div class="panel" style="gap:14px">
-      <span>🎯 <b id="score">0</b></span>
+      <span>🎯 入った数: <b id="score">0</b></span>
       <span id="message"></span>
     </div>
     <div class="panel">
-      <span class="label">ボール</span>
-      <input id="balls" type="range" min="50" max="800" step="10" value="200" />
-      <span id="ballsVal" class="label">200</span>
-    </div>
-    <div class="panel">
-      <span class="label">スピード</span>
-      <input id="speed" type="range" min="2" max="14" step="0.5" value="7" />
-      <span id="speedVal" class="label">7.0</span>
-    </div>
-    <div class="panel">
-      <span class="label">ばらつき</span>
-      <input id="spread" type="range" min="0" max="70" step="1" value="22" />
-      <span id="spreadVal" class="label">22°</span>
-    </div>
-    <div class="panel">
-      <span class="label">穴サイズ</span>
-      <input id="hole" type="range" min="18" max="90" step="2" value="52" />
-      <span id="holeVal" class="label">52px</span>
-    </div>
-    <div class="panel">
       <label class="toggle"><input id="stream" type="checkbox" /> 連続放出</label>
-      <span class="label">レート</span>
-      <input id="rate" type="range" min="10" max="400" step="10" value="120" />
-      <span id="rateVal" class="label">120/秒</span>
+      <span class="label" id="fixedInfo"></span>
+      <button id="reset">リセット</button>
     </div>
-    <button id="launch">一斉に投げる</button>
-    <button id="reset" style="background:linear-gradient(180deg,#b9bccd,#8f94a8); color:#111; box-shadow:none;">リセット</button>
   </div>
 
   <canvas id="canvas"></canvas>
 
-  <div id="footer"><div id="tip">指で下からドラッグして狙い方向 → 「一斉に投げる」。<br>無重量の浮遊感を強化（微小ドリフト/ソフト衝突/トレイル）。連続放出ONで画面をボールで満たせます。</div></div>
+  <div id="footer"><div id="tip">画面のどこでも<strong>タップで即発射</strong>（ドラッグで狙い方向を更新）<br>スピード・ばらつき・穴サイズ・ボール数・放出レートは固定設定です。</div></div>
 
   <div id="testbar"><button id="testbtn">自己診断</button></div>
 
   <script>
-  // ===== 1ファイルのみ・重複排除版 =====
-  // NOTE: 以前のエラー「Identifier 'canvas' has already been declared」は、HTML/JSが二重に挿入され
-  // 同じ const 名が再定義されたのが原因。以下は単一の <script> と単一の <canvas> のみ。
+  // ====== 再宣言ガードと定数（固定） ======
+  if (typeof window.SPEED === 'undefined') window.SPEED = 1.5;     // ゆっくり
+  if (typeof window.SPREAD_DEG === 'undefined') window.SPREAD_DEG = 22;
+  if (typeof window.HOLE_RADIUS === 'undefined') window.HOLE_RADIUS = 52;
+  if (typeof window.BALLS_COUNT === 'undefined') window.BALLS_COUNT = 100;
+  if (typeof window.STREAM_RATE === 'undefined') window.STREAM_RATE = 120;
+  // var 別名（重複読み込みでも SyntaxError にならない）
+  var SPEED = window.SPEED,
+      SPREAD_DEG = window.SPREAD_DEG,
+      HOLE_RADIUS = window.HOLE_RADIUS,
+      BALLS_COUNT = window.BALLS_COUNT,
+      STREAM_RATE = window.STREAM_RATE;
 
-  // ===== 基本セットアップ =====
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  const DPR = Math.min(2, Math.max(1, window.devicePixelRatio || 1)); // iOS負荷対策
-
-  let W = 0, H = 0;
+  // ===== キャンバス =====
+  var canvas = document.getElementById('canvas');
+  var ctx = canvas.getContext('2d');
+  var DPR = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+  var W = 0, H = 0;
   function resize(){
     W = window.innerWidth; H = window.innerHeight;
     canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
     canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
     ctx.setTransform(DPR,0,0,DPR,0,0);
   }
-  window.addEventListener('resize', resize);
-  resize();
+  window.addEventListener('resize', resize); resize();
 
-  // ===== UI =====
-  const ui = {
+  var ui = {
     score: document.getElementById('score'),
     msg: document.getElementById('message'),
-    launch: document.getElementById('launch'),
     reset: document.getElementById('reset'),
-    balls: document.getElementById('balls'),
-    speed: document.getElementById('speed'),
-    spread: document.getElementById('spread'),
-    hole: document.getElementById('hole'),
     stream: document.getElementById('stream'),
-    rate: document.getElementById('rate'),
-    ballsVal: document.getElementById('ballsVal'),
-    speedVal: document.getElementById('speedVal'),
-    spreadVal: document.getElementById('spreadVal'),
-    holeVal: document.getElementById('holeVal'),
-    rateVal: document.getElementById('rateVal'),
+    fixedInfo: document.getElementById('fixedInfo')
   };
-  function syncLabels(){
-    ui.ballsVal.textContent = ui.balls.value;
-    ui.speedVal.textContent = (+ui.speed.value).toFixed(1);
-    ui.spreadVal.textContent = ui.spread.value + '°';
-    ui.holeVal.textContent = ui.hole.value + 'px';
-    ui.rateVal.textContent = ui.rate.value + '/秒';
-  }
-  [ui.balls, ui.speed, ui.spread, ui.hole, ui.rate].forEach(el=>el.addEventListener('input', syncLabels));
-  syncLabels();
+  ui.fixedInfo.textContent = `speed:${SPEED} / spread:±${SPREAD_DEG}° / hole:${HOLE_RADIUS}px / balls:${BALLS_COUNT} / rate:${STREAM_RATE}/s`;
 
-  // ===== ゲーム状態 =====
-  const state = {
-    balls: [],
-    scored: 0,
-    roundActive: false,
-    aim: { fromX: null, fromY: null, toX: null, toY: null, active:false },
-    hole: { x: () => W/2, y: () => Math.max(70, H*0.22), r: () => +ui.hole.value },
-    t: 0,
-    streamAcc: 0,
-    effects: [], // スコア演出用
-    maxBalls: 1500
+  var state = {
+    balls: [], scored: 0, roundActive: false,
+    aim: { fromX:null, fromY:null, toX:null, toY:null, active:false },
+    hole: { x:()=>W/2, y:()=>Math.max(70,H*0.22), r:()=>HOLE_RADIUS },
+    t:0, streamAcc:0, effects:[], maxBalls:1500
   };
 
-  // ===== 入力（タッチ・マウス） =====
-  const pointer = { down:false, x:0, y:0 };
-  function setAimFromPointer(){
-    state.aim.fromX = W/2; // 発射基点は下中央
-    state.aim.fromY = H - 60;
-    state.aim.toX = pointer.x; state.aim.toY = pointer.y;
-    state.aim.active = true;
-  }
-  function onDown(e){ pointer.down=true; updateXY(e); setAimFromPointer(); e.preventDefault(); }
+  // ===== 入力（画面どこでもタップで発射） =====
+  var pointer = { down:false, x:0, y:0 };
+  function setAimFromPointer(){ state.aim.fromX=W/2; state.aim.fromY=H-60; state.aim.toX=pointer.x; state.aim.toY=pointer.y; state.aim.active=true; }
+  function isUiTarget(el){ return !!(el && el.closest && el.closest('#ui, #testbar, #tip')); }
+  function onDown(e){ pointer.down=true; updateXY(e); setAimFromPointer(); spawnBurst(); if(e && e.preventDefault) e.preventDefault(); }
   function onMove(e){ updateXY(e); if(pointer.down){ setAimFromPointer(); } }
-  function onUp(e){ pointer.down=false; state.aim.active = false; }
+  function onUp(){ pointer.down=false; state.aim.active=false; }
   function updateXY(e){
-    if(e.touches && e.touches[0]){ pointer.x = e.touches[0].clientX; pointer.y = e.touches[0].clientY; }
-    else { pointer.x = e.clientX; pointer.y = e.clientY; }
+    if(e && e.touches && e.touches[0]){ pointer.x=e.touches[0].clientX; pointer.y=e.touches[0].clientY; }
+    else if(e && e.changedTouches && e.changedTouches[0]){ pointer.x=e.changedTouches[0].clientX; pointer.y=e.changedTouches[0].clientY; }
+    else if(e){ pointer.x=e.clientX; pointer.y=e.clientY; }
   }
+  // キャンバス上
   canvas.addEventListener('touchstart', onDown, {passive:false});
   canvas.addEventListener('touchmove', onMove, {passive:false});
   canvas.addEventListener('touchend', onUp);
   canvas.addEventListener('mousedown', onDown);
   canvas.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup', onUp);
+  // ドキュメント全体（UI除外）
+  function handleDocDown(e){ if(isUiTarget(e.target)) return; onDown(e); }
+  document.addEventListener('touchstart', handleDocDown, {passive:false});
+  document.addEventListener('mousedown', handleDocDown);
 
-  // ===== 乱数 & ユーティリティ =====
-  const RNG = { rand:(a,b)=>a+Math.random()*(b-a), randInt:(a,b)=>Math.floor(a+Math.random()*(b-a+1)) };
+  // ===== 乱数ユーティリティ =====
+  var RNG = { rand:(a,b)=>a+Math.random()*(b-a), randInt:(a,b)=>Math.floor(a+Math.random()*(b-a+1)) };
 
-  const BALL_R = 5; // 小さめで数を増やす
-  function makeBall(x,y,vx,vy){
-    return { x, y, vx, vy, r: BALL_R, alive:true, scored:false, hue:RNG.randInt(180, 360) };
-  }
+  // ===== ボール =====
+  var BALL_R = 5;
+  function makeBall(x,y,vx,vy){ return {x:x, y:y, vx:vx, vy:vy, r:BALL_R, alive:true, scored:false}; }
 
   function baseAim(){
-    const fromX = W/2, fromY = H - 60;
-    const tx = (state.aim.toX ?? state.hole.x());
-    const ty = (state.aim.toY ?? state.hole.y());
-    const baseAng = Math.atan2(ty - fromY, tx - fromX);
-    return {fromX, fromY, baseAng};
+    var fromX=W/2, fromY=H-60; // 画面センター下
+    var tx=(state.aim.toX??state.hole.x()); var ty=(state.aim.toY??state.hole.y());
+    var baseAng=Math.atan2(ty-fromY,tx-fromX);
+    return {fromX:fromX, fromY:fromY, baseAng:baseAng};
   }
 
+  // 発射（放出口は 1 点固定）
   function spawnBurst(){
-    const n = +ui.balls.value;
-    const speed = +ui.speed.value;
-    const spreadDeg = +ui.spread.value;
-    const {fromX, fromY, baseAng} = baseAim();
-
-    for(let i=0;i<n;i++){
-      const px = RNG.rand(W*0.2, W*0.8);
-      const py = H - 40 - RNG.rand(0, 30);
-      const delta = (RNG.rand(-spreadDeg/2, spreadDeg/2)) * Math.PI/180;
-      const ang = baseAng + delta;
-      const vx = Math.cos(ang) * speed;
-      const vy = Math.sin(ang) * speed;
-      state.balls.push(makeBall(px, py, vx, vy));
+    var base = baseAim();
+    var a = base.baseAng;
+    var fromX = base.fromX, fromY = base.fromY;
+    for(var i=0;i<BALLS_COUNT;i++){
+      var px=fromX;
+      var py=fromY;
+      var delta=(RNG.rand(-SPREAD_DEG/2,SPREAD_DEG/2))*Math.PI/180;
+      var ang=a+delta;
+      var vx=Math.cos(ang)*SPEED;
+      var vy=Math.sin(ang)*SPEED;
+      state.balls.push(makeBall(px,py,vx,vy));
     }
-    pruneIfNeeded();
-    state.roundActive = true;
-    state.scored = 0;
-    ui.msg.textContent = '発射！';
+    pruneIfNeeded(); state.roundActive=true; state.scored=0; ui.msg.textContent='発射！';
   }
 
   function spawnStream(dt){
     if(!ui.stream.checked) return;
-    const rate = +ui.rate.value; // balls per second
-    state.streamAcc += rate * dt;
-    let makeN = Math.floor(state.streamAcc);
-    state.streamAcc -= makeN;
+    state.streamAcc += STREAM_RATE * dt;
+    var makeN = Math.floor(state.streamAcc); state.streamAcc -= makeN;
     if(makeN<=0) return;
-    const speed = +ui.speed.value * 0.9; // 連続時はやや弱め
-    const spreadDeg = +ui.spread.value;
-    const {fromX, fromY, baseAng} = baseAim();
-    for(let i=0;i<makeN;i++){
-      const px = RNG.rand(W*0.25, W*0.75);
-      const py = H - 40 - RNG.rand(0, 40);
-      const delta = (RNG.rand(-spreadDeg/2, spreadDeg/2)) * Math.PI/180;
-      const ang = baseAng + delta;
-      const vx = Math.cos(ang) * speed;
-      const vy = Math.sin(ang) * speed;
-      state.balls.push(makeBall(px, py, vx, vy));
+    var base = baseAim();
+    var a = base.baseAng;
+    var fromX = base.fromX, fromY = base.fromY;
+    for(var i=0;i<makeN;i++){
+      var px=fromX;
+      var py=fromY;
+      var delta = (RNG.rand(-SPREAD_DEG/2,SPREAD_DEG/2))*Math.PI/180;
+      var ang=a+delta;
+      var vx=Math.cos(ang)*SPEED*0.9;
+      var vy=Math.sin(ang)*SPEED*0.9;
+      state.balls.push(makeBall(px,py,vx,vy));
     }
-    pruneIfNeeded();
-    state.roundActive = true;
+    pruneIfNeeded(); state.roundActive=true;
   }
 
   function pruneIfNeeded(){
-    if(state.balls.length > state.maxBalls){
-      state.balls.splice(0, state.balls.length - state.maxBalls); // 古いものから削除
-    }
+    if(state.balls.length>state.maxBalls){ state.balls.splice(0, state.balls.length-state.maxBalls); }
   }
 
-  ui.launch.addEventListener('click', spawnBurst);
-  ui.reset.addEventListener('click', ()=>{
-    state.balls.length = 0; state.scored = 0; state.roundActive = false; ui.msg.textContent = 'リセット';
+  ui.reset.addEventListener('click', function(){
+    state.balls.length=0; state.scored=0; state.roundActive=false; ui.msg.textContent='リセット';
   });
 
-  // ===== 判定（穴に入ったか） =====
+  // ===== 当たり判定 =====
   function checkScored(b){
-    const hx = state.hole.x(); const hy = state.hole.y(); const hr = state.hole.r();
-    const dx = b.x - hx; const dy = b.y - hy; const dist = Math.hypot(dx, dy);
-    if(dist <= (hr - b.r)) return true;
-    return false;
+    var hx=state.hole.x(), hy=state.hole.y(), hr=state.hole.r();
+    var dx=b.x-hx, dy=b.y-hy; var dist=Math.hypot(dx,dy);
+    return dist <= (hr - b.r);
   }
 
-  // ===== ソフト衝突用グリッド =====
-  const grid = new Map();
-  const CELL = BALL_R * 3;
+  // ===== 簡易衝突 =====
+  var grid = new Map();
+  var CELL = BALL_R*3;
   function cellKey(x,y){ return ((x/CELL)|0)+','+((y/CELL)|0); }
   function buildGrid(){
-    grid.clear();
-    const arr = state.balls;
-    for(let i=0;i<arr.length;i++){
-      const b = arr[i]; if(!b.alive) continue;
-      const k = cellKey(b.x,b.y);
-      if(!grid.has(k)) grid.set(k,[]);
-      grid.get(k).push(i);
+    grid.clear(); var arr=state.balls;
+    for(var i=0;i<arr.length;i++){
+      var b=arr[i]; if(!b.alive) continue; var k=cellKey(b.x,b.y);
+      if(!grid.has(k)) grid.set(k,[]); grid.get(k).push(i);
     }
   }
-
   function softCollisions(){
-    const arr = state.balls;
-    for(let i=0;i<arr.length;i++){
-      const b = arr[i]; if(!b.alive) continue;
-      const cx = (b.x/CELL)|0, cy=(b.y/CELL)|0;
-      for(let gx=cx-1; gx<=cx+1; gx++){
-        for(let gy=cy-1; gy<=cy+1; gy++){
-          const list = grid.get(gx+','+gy); if(!list) continue;
-          for(const j of list){ if(j<=i) continue; const o = arr[j]; if(!o.alive) continue;
-            const dx=b.x-o.x, dy=b.y-o.y; const d2=dx*dx+dy*dy; const minD=(b.r+o.r);
-            if(d2>0 && d2 < minD*minD){
-              const d=Math.sqrt(d2); const nx=dx/d, ny=dy/d; const overlap = (minD - d)*0.5;
-              // 離す
-              b.x += nx*overlap; b.y += ny*overlap;
-              o.x -= nx*overlap; o.y -= ny*overlap;
-              // 反発（完全弾性ではなく少し減衰）
-              const relVx = b.vx - o.vx, relVy = b.vy - o.vy;
-              const relDot = relVx*nx + relVy*ny;
-              if(relDot < 0){
-                const jimp = -(1.0)*relDot; // 係数1.0で軽め
-                b.vx += nx*jimp; b.vy += ny*jimp;
-                o.vx -= nx*jimp; o.vy -= ny*jimp;
-              }
+    var arr=state.balls;
+    for(var i=0;i<arr.length;i++){
+      var b=arr[i]; if(!b.alive) continue;
+      var cx=(b.x/CELL)|0, cy=(b.y/CELL)|0;
+      for(var gx=cx-1; gx<=cx+1; gx++){
+        for(var gy=cy-1; gy<=cy+1; gy++){
+          var list=grid.get(gx+','+gy); if(!list) continue;
+          for (var li=0; li<list.length; li++){
+            var j=list[li]; if(j<=i) continue;
+            var o=arr[j]; if(!o.alive) continue;
+            var dx=b.x-o.x, dy=b.y-o.y; var d2=dx*dx+dy*dy; var minD=(b.r+o.r);
+            if(d2>0 && d2<minD*minD){
+              var d=Math.sqrt(d2); var nx=dx/d, ny=dy/d; var overlap=(minD-d)*0.5;
+              b.x+=nx*overlap; b.y+=ny*overlap; o.x-=nx*overlap; o.y-=ny*overlap;
+              var relVx=b.vx-o.vx, relVy=b.vy-o.vy; var relDot=relVx*nx+relVy*ny;
+              if(relDot<0){ var jimp=-(1.0)*relDot; b.vx+=nx*jimp; b.vy+=ny*jimp; o.vx-=nx*jimp; o.vy-=ny*jimp; }
             }
           }
         }
@@ -278,173 +213,140 @@
     }
   }
 
-  // ===== 微小ドリフト場（ゼログラ的ふわふわ感） =====
+  // ===== 微小ドリフト =====
   function drift(x,y,t){
-    const s = 0.0009; // 強さ
-    const u = Math.sin( (x*0.01) + t*0.6 ) + Math.cos( (y*0.012) - t*0.4 );
-    const v = Math.cos( (x*0.008) - t*0.5 ) - Math.sin( (y*0.01) + t*0.7 );
+    var s=0.0009;
+    var u=Math.sin((x*0.01)+t*0.6)+Math.cos((y*0.012)-t*0.4);
+    var v=Math.cos((x*0.008)-t*0.5)-Math.sin((y*0.01)+t*0.7);
     return {dx:u*s, dy:v*s};
   }
 
-  // ===== アップデート =====
-  let last = performance.now();
+  // ===== ループ =====
+  var last=performance.now();
   function step(){
-    const now = performance.now();
-    let dt = (now - last)/1000; if(dt>0.05) dt=0.05; last = now; // 暴走防止
-    state.t += dt;
-
+    var now=performance.now(); var dt=(now-last)/1000; if(dt>0.05) dt=0.05; last=now; state.t+=dt;
     spawnStream(dt);
-
-    // 物理 + 壁反射（上下左右）。無重力: 加速度0/摩擦ほぼ0、ドリフトで微小変化
-    for(const b of state.balls){
-      if(!b.alive) continue;
-      const d = drift(b.x,b.y,state.t);
-      b.vx += d.dx; b.vy += d.dy;
-
-      b.x += b.vx; b.y += b.vy;
-
-      // 壁反射（減衰ほんの少し）
-      const e = 0.995; // エネルギー保持
-      if(b.x < b.r){ b.x = b.r; b.vx = -b.vx * e; }
-      if(b.x > W - b.r){ b.x = W - b.r; b.vx = -b.vx * e; }
-      if(b.y < b.r){ b.y = b.r; b.vy = -b.vy * e; }
-      if(b.y > H - b.r){ b.y = H - b.r; b.vy = -b.vy * e; }
-
-      // 穴チェック
+    for (var i=0;i<state.balls.length;i++){
+      var b=state.balls[i]; if(!b.alive) continue;
+      var d=drift(b.x,b.y,state.t); b.vx+=d.dx; b.vy+=d.dy; b.x+=b.vx; b.y+=b.vy;
+      var e=0.995;
+      if(b.x<b.r){ b.x=b.r; b.vx=-b.vx*e; }
+      if(b.x>W-b.r){ b.x=W-b.r; b.vx=-b.vx*e; }
+      if(b.y<b.r){ b.y=b.r; b.vy=-b.vy*e; }
+      if(b.y>H-b.r){ b.y=H-b.r; b.vy=-b.vy*e; }
       if(!b.scored && checkScored(b)){
-        b.scored = true; b.alive = false; state.scored++; ui.score.textContent = state.scored;
-        spawnScoreFx(b.x,b.y);
+        b.scored=true; b.alive=false; state.scored++; ui.score.textContent=state.scored; spawnScoreFx(b.x,b.y);
       }
     }
-
-    // ソフト衝突（軽量）
-    buildGrid();
-    softCollisions();
-
-    // ラウンド終了条件
-    if(state.roundActive && state.balls.every(b=>!b.alive)){
-      state.roundActive = false;
-      ui.msg.textContent = `ラウンド終了：${state.scored} 点`;
+    buildGrid(); softCollisions();
+    if(state.roundActive && state.balls.every(function(bb){ return !bb.alive; })){
+      state.roundActive=false; ui.msg.textContent='ラウンド終了：'+state.scored+' 点';
     }
-
-    // エフェクト更新
-    for(const fx of state.effects){ fx.age += dt; }
-    state.effects = state.effects.filter(fx => fx.age < fx.life);
+    for (var k=0;k<state.effects.length;k++){ state.effects[k].age += dt; }
+    state.effects = state.effects.filter(function(fx){ return fx.age<fx.life; });
   }
 
-  // ===== スコア演出 =====
-  function spawnScoreFx(x,y){
-    state.effects.push({x,y,age:0,life:0.8});
-  }
+  function spawnScoreFx(x,y){ state.effects.push({x:x,y:y,age:0,life:0.8}); }
 
-  // ===== 描画 =====
-  const starField = Array.from({length:80},()=>({ x:Math.random(), y:Math.random(), s:Math.random()*2+0.5, a:Math.random()*0.4+0.05 }));
+  var starField = Array.from({length:80},function(){ return { x:Math.random(), y:Math.random(), s:Math.random()*2+0.5, a:Math.random()*0.4+0.05 }; });
   function drawStars(){
-    for(const st of starField){
-      const x = st.x*W, y = st.y*H;
+    ctx.save();
+    for (var i=0;i<starField.length;i++){
+      var st=starField[i];
+      var x=st.x*W, y=st.y*H;
       ctx.globalAlpha = st.a + Math.sin((performance.now()/1000 + st.x*7 + st.y*3))*0.05;
-      ctx.beginPath(); ctx.arc(x,y, st.s, 0, Math.PI*2); ctx.fillStyle = '#ffffff'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y,st.s,0,Math.PI*2);
+      ctx.fillStyle='#ffffff'; ctx.fill();
     }
+    ctx.restore(); // globalAlpha を元に戻す
   }
 
   function draw(){
-    // 画面全消去ではなく、半透明でフェードさせてトレイルを残す
-    ctx.globalAlpha = 0.18; ctx.fillStyle = '#0f1220'; ctx.fillRect(0,0,W,H); ctx.globalAlpha = 1;
-
-    // 背景スター
+    ctx.globalAlpha=0.18; ctx.fillStyle='#0f1220'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1;
     drawStars();
-
-    // 穴（ホール）
-    const hx = state.hole.x(), hy = state.hole.y(), hr = state.hole.r();
+    var hx=state.hole.x(), hy=state.hole.y(), hr=state.hole.r();
     ctx.save();
-    const grd = ctx.createRadialGradient(hx,hy,hr*0.2, hx,hy,hr);
-    grd.addColorStop(0,'rgba(157,255,106,0.35)');
-    grd.addColorStop(1,'rgba(106,231,255,0.12)');
-    ctx.fillStyle = grd;
-    ctx.beginPath(); ctx.arc(hx,hy, hr+10, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(hx,hy, hr, 0, Math.PI*2); ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(106,231,255,0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hx,hy, hr-6, 0, Math.PI*2); ctx.stroke();
+    var grd=ctx.createRadialGradient(hx,hy,hr*0.2,hx,hy,hr); grd.addColorStop(0,'rgba(157,255,106,0.35)'); grd.addColorStop(1,'rgba(106,231,255,0.12)');
+    ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(hx,hy, hr+10, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(hx,hy, hr, 0, Math.PI*2); ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fill();
+    ctx.strokeStyle='rgba(106,231,255,0.6)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(hx,hy, hr-6, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
 
-    // 発射ガイド
     if(state.aim.active){
-      const {fromX,fromY,toX,toY} = state.aim;
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; ctx.setLineDash([8,6]);
-      ctx.beginPath(); ctx.moveTo(fromX,fromY); ctx.lineTo(toX,toY); ctx.stroke();
-      ctx.setLineDash([]);
-      const ang = Math.atan2(toY-fromY, toX-fromX);
-      const ax = toX - Math.cos(ang)*14, ay = toY - Math.sin(ang)*14;
-      ctx.beginPath(); ctx.moveTo(toX,toY);
-      ctx.lineTo(ax + Math.cos(ang+Math.PI*0.8)*10, ay + Math.sin(ang+Math.PI*0.8)*10);
-      ctx.lineTo(ax + Math.cos(ang-Math.PI*0.8)*10, ay + Math.sin(ang-Math.PI*0.8)*10);
-      ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill();
-      ctx.restore();
+      var a=state.aim; ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.5)'; ctx.lineWidth=2; ctx.setLineDash([8,6]);
+      ctx.beginPath(); ctx.moveTo(a.fromX,a.fromY); ctx.lineTo(a.toX,a.toY); ctx.stroke(); ctx.setLineDash([]);
+      var ang=Math.atan2(a.toY-a.fromY,a.toX-a.fromX); var ax=a.toX-Math.cos(ang)*14, ay=a.toY-Math.sin(ang)*14;
+      ctx.beginPath(); ctx.moveTo(a.toX,a.toY);
+      ctx.lineTo(ax+Math.cos(ang+Math.PI*0.8)*10, ay+Math.sin(ang+Math.PI*0.8)*10);
+      ctx.lineTo(ax+Math.cos(ang-Math.PI*0.8)*10, ay+Math.sin(ang-Math.PI*0.8)*10);
+      ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.fill(); ctx.restore();
     }
 
-    // ボール
-    for(const b of state.balls){
-      if(!b.alive) continue;
-      const r = b.r;
-      ctx.save();
-      const g = ctx.createRadialGradient(b.x-r*0.4,b.y-r*0.4, r*0.3, b.x,b.y, r*1.6);
-      g.addColorStop(0,`hsla(${b.hue},100%,70%,0.95)`);
-      g.addColorStop(1,`hsla(${b.hue},100%,50%,0.12)`);
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(b.x,b.y,r,0,Math.PI*2); ctx.fill();
-      ctx.restore();
+    // 茶色・不透明のボール
+    ctx.fillStyle = '#8B4513';
+    for (var bi=0; bi<state.balls.length; bi++){
+      var b=state.balls[bi]; if(!b.alive) continue; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
     }
 
-    // スコアFX（拡大リング）
-    for(const fx of state.effects){
-      const p = fx.age/fx.life;
-      const rr = 8 + p*32;
-      ctx.beginPath(); ctx.arc(fx.x, fx.y, rr, 0, Math.PI*2);
-      ctx.strokeStyle = `rgba(255,255,255,${1-p})`;
-      ctx.lineWidth = 2; ctx.stroke();
+    for (var ei=0; ei<state.effects.length; ei++){
+      var fx=state.effects[ei]; var p=fx.age/fx.life; var rr=8+p*32; ctx.beginPath(); ctx.arc(fx.x,fx.y,rr,0,Math.PI*2); ctx.strokeStyle='rgba(255,255,255,'+(1-p)+')'; ctx.lineWidth=2; ctx.stroke();
     }
 
-    // 下部の発射帯
-    ctx.save(); ctx.fillStyle = 'rgba(255,255,255,0.04)'; ctx.fillRect(0, H-80, W, 80); ctx.restore();
+    ctx.save(); ctx.fillStyle='rgba(255,255,255,0.04)'; ctx.fillRect(0, H-80, W, 80); ctx.restore();
   }
 
-  function loop(){
-    step();
-    draw();
-    requestAnimationFrame(loop);
-  }
+  function loop(){ step(); draw(); requestAnimationFrame(loop); }
   loop();
 
-  // ===== 簡易テスト（自己診断） =====
+  // ===== 自己診断（テスト） =====
   function runSelfTests(){
-    const results = [];
-    function t(name, pass, detail=""){ results.push({name, pass, detail}); }
-
-    // Test 1: canvas が1つだけ
-    const canvases = document.querySelectorAll('canvas#canvas');
-    t('Canvasは1つだけ', canvases.length === 1, `found=${canvases.length}`);
-
-    // Test 2: 変数canvas/ctx が利用可能
-    t('canvas変数が存在し2D取得OK', !!canvas && !!ctx && ctx instanceof CanvasRenderingContext2D);
-
-    // Test 3: 二重タイトル/二重UIがない
-    t('UI重複なし', document.querySelectorAll('#ui').length === 1, `ui=${document.querySelectorAll('#ui').length}`);
-
-    // Test 4: ゲーム関数が定義済み
+    var results=[]; function t(name,pass,detail){ results.push({name:name,pass:pass,detail:detail||""}); }
+    t('Canvasは1つだけ', document.querySelectorAll('canvas#canvas').length===1);
+    t('canvas変数が存在し2D取得OK', !!canvas && !!ctx && (ctx instanceof CanvasRenderingContext2D));
+    t('UI重複なし', document.querySelectorAll('#ui').length===1);
     t('spawnBurst/loop が定義済み', typeof spawnBurst==='function' && typeof loop==='function');
-
-    // Test 5: 1フレーム進めてもクラッシュしない
     try { step(); draw(); t('1フレーム進行でエラーなし', true); } catch(e){ t('1フレーム進行でエラーなし', false, String(e)); }
+    // タップ即発射（合成イベント）
+    var beforeTap=state.balls.length; onDown({clientX:W*0.5, clientY:H-80, preventDefault:function(){}}); t('タップでBALLS_COUNT増加', state.balls.length-beforeTap===BALLS_COUNT, 'diff='+(state.balls.length-beforeTap));
+    // 連続放出ONで増える
+    var was=ui.stream.checked; ui.stream.checked=true; var before2=state.balls.length; state.streamAcc=0; spawnStream(1.0); var inc=state.balls.length-before2; t('連続放出1秒でSTREAM_RATE生成', inc===Math.floor(STREAM_RATE), 'inc='+inc); ui.stream.checked=was;
+    // 文書整合
+    t('DOCTYPEが存在', !!document.doctype);
+    t('HTMLタグは1つだけ', document.getElementsByTagName('html').length===1);
+    t('scriptタグは1つだけ', document.scripts.length===1);
+    t('titleタグは1つだけ', document.getElementsByTagName('title').length===1);
+    // 末尾閉じ（Unexpected token 対策）
+    t('documentElementのnodeName=HTML', document.documentElement && document.documentElement.nodeName==='HTML');
+    // draw 後 α=1（ボールが透明化しない）
+    draw(); t('draw後のglobalAlphaは1', ctx.globalAlpha===1, 'alpha='+ctx.globalAlpha);
+    // 放出口が1点（位置分散ほぼ0）
+    (function(){
+      var before=state.balls.length; spawnBurst(); var added=state.balls.slice(before);
+      var xs=added.map(function(b){return b.x;}), ys=added.map(function(b){return b.y;});
+      function variance(arr){ var m=arr.reduce(function(a,c){return a+c;},0)/arr.length; return arr.reduce(function(a,c){return a+(c-m)*(c-m);},0)/arr.length; }
+      var vx=variance(xs), vy=variance(ys);
+      t('放出口は1点（X分散≈0）', vx<1e-9, 'varX='+vx);
+      t('放出口は1点（Y分散≈0）', vy<1e-9, 'varY='+vy);
+    })();
 
-    // 結果表示
-    const ok = results.every(r=>r.pass);
+    // スコア表示が得点と一致するか
+    (function(){
+      var hx=state.hole.x(), hy=state.hole.y();
+      var before=state.scored;
+      state.balls.push({x:hx, y:hy, vx:0, vy:0, r:5, alive:true, scored:false});
+      step();
+      t('穴に入るとstate.scoredが増加', state.scored===before+1, `scored=${state.scored}`);
+      t('UIのスコア表示と一致', ui.score.textContent===""+state.scored);
+    })();
+
     console.table(results);
-    ui.msg.textContent = ok ? '✅ 自己診断OK' : '❌ 自己診断に失敗 (詳細はConsole)';
+    var ok=results.every(function(r){ return r.pass; });
+    ui.msg.textContent = ok ? '✅ 自己診断OK' : '❌ 自己診断に失敗 (Console参照)';
   }
   document.getElementById('testbtn').addEventListener('click', runSelfTests);
 
   // iOSでアドレスバー縮小を促す
-  window.addEventListener('load', ()=>{ setTimeout(()=>window.scrollTo(0,1), 300); });
+  window.addEventListener('load', function(){ setTimeout(function(){ window.scrollTo(0,1); }, 300); });
   </script>
 </body>
 </html>
