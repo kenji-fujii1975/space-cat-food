@@ -79,12 +79,19 @@
   var BALL_R = 5;
   function makeBall(x,y,vx,vy){ return {x:x,y:y,vx:vx,vy:vy,r:BALL_R,alive:true,scored:false}; }
 
-  function baseAim(){ var fromX=W/2, fromY=H-60; var tx=(state.aim.toX!=null?state.aim.toX:W/2); var ty=(state.aim.toY!=null?state.aim.toY:H/2); var baseAng=Math.atan2(ty-fromY,tx-fromX); return {fromX:fromX,fromY:fromY,baseAng:baseAng}; }
+  // 狙い先（タップしない場合は画面やや上）
+  function baseAim(){
+    var fromX=W/2, fromY=H-60;
+    var tx=(state.aim.toX!=null?state.aim.toX:W/2);
+    var ty=(state.aim.toY!=null?state.aim.toY:H*0.42);
+    var baseAng=Math.atan2(ty-fromY,tx-fromX);
+    return {fromX:fromX,fromY:fromY,baseAng:baseAng};
+  }
 
+  // 一斉発射（“丸く固まった”ジッタ付き）
   function spawnBurst(){
     if(state.clear) return;
     var base = baseAim(); var a = base.baseAng; var fromX = base.fromX, fromY = base.fromY;
-    // 丸く固まった状態から放出（位置/角度/速度にジッタ）
     var POS_JITTER_R = 12;   // px
     for(var i=0;i<BALLS_COUNT;i++){
       var rr = Math.sqrt(Math.random()) * POS_JITTER_R; // 円内一様
@@ -102,8 +109,8 @@
     state.roundActive=true; ui.msg.textContent='発射！';
   }
 
-  // ==== 穴：画面中央（透明） ====
-  function hole(){ return { x:W/2, y:H/2, r:HOLE_RADIUS }; }
+  // ==== 穴：画面中央より少し上（透明） ====
+  function hole(){ return { x:W/2, y:Math.max(60, H*0.42), r:HOLE_RADIUS }; }
   function checkScored(b){ var h=hole(); var dx=b.x-h.x, dy=b.y-h.y; var dist=Math.hypot(dx,dy); return dist <= (h.r - b.r); }
 
   // ==== 画像ロード（安全ガード付き） ====
@@ -125,11 +132,18 @@
   // 猫画像の中央配置スケール
   var IMG_SCALE = 0.42;
 
-  // ==== ループ ====
+  // ==== メインループ ====
   function step(){
     for (var i=0;i<state.balls.length;i++){
       var b=state.balls[i]; if(!b.alive) continue;
       b.x += b.vx; b.y += b.vy;
+      // 画面端で反射（わずかに減衰）
+      var e = 0.995;
+      if (b.x < b.r) { b.x = b.r; b.vx = -b.vx * e; }
+      if (b.x > W - b.r) { b.x = W - b.r; b.vx = -b.vx * e; }
+      if (b.y < b.r) { b.y = b.r; b.vy = -b.vy * e; }
+      if (b.y > H - b.r) { b.y = H - b.r; b.vy = -b.vy * e; }
+      // スコア判定
       if(!b.scored && checkScored(b)){
         b.scored=true; b.alive=false;
         state.scored++;
@@ -171,7 +185,7 @@
   function loop(){ step(); draw(); requestAnimationFrame(loop); }
   loop();
 
-  // ==== 簡易セルフテスト（追加） ====
+  // ==== 簡易セルフテスト（コンソール出力） ====
   (function selfTests(){
     var results=[]; function t(name,fn){ try{ var ok=fn(); results.push({name:name, pass:!!ok}); }catch(e){ results.push({name:name, pass:false, err:String(e)}); } }
     t('Canvas/Context 取得', function(){ return !!canvas && !!ctx; });
@@ -180,7 +194,7 @@
       try { draw(); return true; } finally { bgReady=_br; bgError=_be; catReady=_cr; catError=_ce; }
     });
     t('spawnBurst が定義されている', function(){ return typeof spawnBurst==='function'; });
-    t('hole が中央にある', function(){ var h=hole(); return Math.abs(h.x-W/2)<0.1 && Math.abs(h.y-H/2)<0.1; });
+    t('hole が中央より上にある', function(){ var h=hole(); return h.y < H/2; });
     console.table(results);
   })();
   </script>
