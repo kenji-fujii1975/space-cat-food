@@ -21,8 +21,6 @@
     #canvas{ position:fixed; inset:0; width:100vw; height:100vh; display:block; }
     #footer{ position:fixed; inset:auto 0 env(safe-area-inset-bottom) 0; z-index:10; display:flex; justify-content:center; pointer-events:none; }
     #tip{ pointer-events:auto; margin:10px; padding:8px 12px; border-radius:12px; background:rgba(24,28,47,0.6); border:1px solid rgba(255,255,255,0.08); font-size:12px; color:var(--muted); }
-    #testbar{ position:fixed; right:8px; bottom:calc(8px + env(safe-area-inset-bottom)); z-index:20; }
-    #testbtn{ background:linear-gradient(180deg,#b9bccd,#8f94a8); color:#111; box-shadow:none; font-size:12px; padding:8px 10px; }
   </style>
 </head>
 <body>
@@ -31,25 +29,18 @@
       <span>🎯 入った数: <b id="score">0</b></span>
       <span id="message"></span>
     </div>
-    <div class="panel">
-      <label class="toggle"><input id="stream" type="checkbox" /> 連続放出</label>
-      <span class="label" id="fixedInfo"></span>
-    </div>
   </div>
 
   <canvas id="canvas"></canvas>
 
-  <div id="footer"><div id="tip">画面のどこでも<strong>タップで即発射</strong><br>300個穴に入るとクリアです。</div></div>
-
-  <div id="testbar"><button id="testbtn">自己診断</button></div>
+  <div id="footer"><div id="tip">画面のどこでも<strong>タップで一斉発射</strong><br>300個穴に入るとクリアです。</div></div>
 
   <script>
   if (typeof window.SPEED === 'undefined') window.SPEED = 1.5;
   if (typeof window.SPREAD_DEG === 'undefined') window.SPREAD_DEG = 22;
   if (typeof window.HOLE_RADIUS === 'undefined') window.HOLE_RADIUS = 52;
-  if (typeof window.BALLS_COUNT === 'undefined') window.BALLS_COUNT = 100;
-  if (typeof window.STREAM_RATE === 'undefined') window.STREAM_RATE = 120;
-  var SPEED = window.SPEED, SPREAD_DEG = window.SPREAD_DEG, HOLE_RADIUS = window.HOLE_RADIUS, BALLS_COUNT = window.BALLS_COUNT, STREAM_RATE = window.STREAM_RATE;
+  if (typeof window.BALLS_COUNT === 'undefined') window.BALLS_COUNT = 50;
+  var SPEED = window.SPEED, SPREAD_DEG = window.SPREAD_DEG, HOLE_RADIUS = window.HOLE_RADIUS, BALLS_COUNT = window.BALLS_COUNT;
 
   var canvas = document.getElementById('canvas');
   var ctx = canvas.getContext('2d');
@@ -65,22 +56,19 @@
 
   var ui = {
     score: document.getElementById('score'),
-    msg: document.getElementById('message'),
-    stream: document.getElementById('stream'),
-    fixedInfo: document.getElementById('fixedInfo')
+    msg: document.getElementById('message')
   };
-  ui.fixedInfo.textContent = `speed:${SPEED} / spread:±${SPREAD_DEG}° / hole:${HOLE_RADIUS}px / balls:${BALLS_COUNT} / rate:${STREAM_RATE}/s`;
 
   var state = {
     balls: [], scored: 0, roundActive: false,
     aim: { fromX:null, fromY:null, toX:null, toY:null, active:false },
     hole: { x:()=>W/2, y:()=>Math.max(70,H*0.22), r:()=>HOLE_RADIUS },
-    t:0, streamAcc:0, effects:[], maxBalls:1500, clear:false
+    t:0, clear:false
   };
 
   var pointer = { down:false, x:0, y:0 };
   function setAimFromPointer(){ state.aim.fromX=W/2; state.aim.fromY=H-60; state.aim.toX=pointer.x; state.aim.toY=pointer.y; state.aim.active=true; }
-  function isUiTarget(el){ return !!(el && el.closest && el.closest('#ui, #testbar, #tip')); }
+  function isUiTarget(el){ return !!(el && el.closest && el.closest('#ui, #tip')); }
   function onDown(e){ pointer.down=true; updateXY(e); setAimFromPointer(); spawnBurst(); if(e && e.preventDefault) e.preventDefault(); }
   function onMove(e){ updateXY(e); if(pointer.down){ setAimFromPointer(); } }
   function onUp(){ pointer.down=false; state.aim.active=false; }
@@ -111,12 +99,9 @@
     for(var i=0;i<BALLS_COUNT;i++){
       var px=fromX, py=fromY; var delta=(RNG.rand(-SPREAD_DEG/2,SPREAD_DEG/2))*Math.PI/180; var ang=a+delta; var vx=Math.cos(ang)*SPEED; var vy=Math.sin(ang)*SPEED; state.balls.push(makeBall(px,py,vx,vy));
     }
-    pruneIfNeeded(); state.roundActive=true; ui.msg.textContent='発射！';
+    if(state.balls.length>1500) state.balls.splice(0,state.balls.length-1500);
+    state.roundActive=true; ui.msg.textContent='発射！';
   }
-
-  function spawnStream(dt){ if(!ui.stream.checked || state.clear) return; state.streamAcc += STREAM_RATE * dt; var makeN = Math.floor(state.streamAcc); state.streamAcc -= makeN; if(makeN<=0) return; var base = baseAim(); var a = base.baseAng; var fromX = base.fromX, fromY = base.fromY; for(var i=0;i<makeN;i++){ var px=fromX, py=fromY; var delta=(RNG.rand(-SPREAD_DEG/2,SPREAD_DEG/2))*Math.PI/180; var ang=a+delta; var vx=Math.cos(ang)*SPEED*0.9; var vy=Math.sin(ang)*SPEED*0.9; state.balls.push(makeBall(px,py,vx,vy)); } pruneIfNeeded(); state.roundActive=true; }
-
-  function pruneIfNeeded(){ if(state.balls.length>state.maxBalls){ state.balls.splice(0,state.balls.length-state.maxBalls); } }
 
   function checkScored(b){ var hx=state.hole.x(), hy=state.hole.y(), hr=state.hole.r(); var dx=b.x-hx, dy=b.y-hy; var dist=Math.hypot(dx,dy); return dist <= (hr - b.r); }
 
@@ -128,16 +113,12 @@
   function drift(x,y,t){ var s=0.0009; var u=Math.sin((x*0.01)+t*0.6)+Math.cos((y*0.012)-t*0.4); var v=Math.cos((x*0.008)-t*0.5)-Math.sin((y*0.01)+t*0.7); return {dx:u*s, dy:v*s}; }
 
   var last=performance.now();
-  function step(){ var now=performance.now(); var dt=(now-last)/1000; if(dt>0.05) dt=0.05; last=now; state.t+=dt; if(!state.clear){ spawnStream(dt); }
-    for (const b of state.balls){ if(!b.alive) continue; var d=drift(b.x,b.y,state.t); b.vx+=d.dx; b.vy+=d.dy; b.x+=b.vx; b.y+=b.vy; var e=0.995; if(b.x<b.r){ b.x=b.r; b.vx=-b.vx*e; } if(b.x>W-b.r){ b.x=W-b.r; b.vx=-b.vx*e; } if(b.y<b.r){ b.y=b.r; b.vy=-b.vy*e; } if(b.y>H-b.r){ b.y=H-b.r; b.vy=-b.vy*e; } if(!b.scored && checkScored(b)){ b.scored=true; b.alive=false; state.scored++; ui.score.textContent=state.scored; spawnScoreFx(b.x,b.y); if(state.scored>=300 && !state.clear){ state.clear=true; ui.msg.textContent='🎉 クリア！300個入りました！'; } } }
-    buildGrid(); softCollisions(); for (const fx of state.effects){ fx.age += dt; } state.effects = state.effects.filter(fx=>fx.age<fx.life); }
-
-  function spawnScoreFx(x,y){ state.effects.push({x,y,age:0,life:0.8}); }
+  function step(){ var now=performance.now(); var dt=(now-last)/1000; if(dt>0.05) dt=0.05; last=now; state.t+=dt; for (const b of state.balls){ if(!b.alive) continue; var d=drift(b.x,b.y,state.t); b.vx+=d.dx; b.vy+=d.dy; b.x+=b.vx; b.y+=b.vy; var e=0.995; if(b.x<b.r){ b.x=b.r; b.vx=-b.vx*e; } if(b.x>W-b.r){ b.x=W-b.r; b.vx=-b.vx*e; } if(b.y<b.r){ b.y=b.r; b.vy=-b.vy*e; } if(b.y>H-b.r){ b.y=H-b.r; b.vy=-b.vy*e; } if(!b.scored && checkScored(b)){ b.scored=true; b.alive=false; state.scored++; ui.score.textContent=state.scored; if(state.scored>=300 && !state.clear){ state.clear=true; ui.msg.textContent='🎉 クリア！300個入りました！'; } } } buildGrid(); softCollisions(); }
 
   var starField = Array.from({length:80},()=>({ x:Math.random(), y:Math.random(), s:Math.random()*2+0.5, a:Math.random()*0.4+0.05 }));
   function drawStars(){ ctx.save(); for (const st of starField){ var x=st.x*W, y=st.y*H; ctx.globalAlpha=st.a + Math.sin((performance.now()/1000 + st.x*7 + st.y*3))*0.05; ctx.beginPath(); ctx.arc(x,y,st.s,0,Math.PI*2); ctx.fillStyle='#ffffff'; ctx.fill(); } ctx.restore(); }
 
-  function draw(){ ctx.globalAlpha=0.18; ctx.fillStyle='#0f1220'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; drawStars(); var hx=state.hole.x(), hy=state.hole.y(), hr=state.hole.r(); ctx.save(); var grd=ctx.createRadialGradient(hx,hy,hr*0.2,hx,hy,hr); grd.addColorStop(0,'rgba(157,255,106,0.35)'); grd.addColorStop(1,'rgba(106,231,255,0.12)'); ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(hx,hy, hr+10, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(hx,hy, hr, 0, Math.PI*2); ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fill(); ctx.strokeStyle='rgba(106,231,255,0.6)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(hx,hy, hr-6, 0, Math.PI*2); ctx.stroke(); ctx.restore(); ctx.fillStyle='#8B4513'; for (const b of state.balls){ if(!b.alive) continue; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); } for (const fx of state.effects){ var p=fx.age/fx.life; var rr=8+p*32; ctx.beginPath(); ctx.arc(fx.x,fx.y,rr,0,Math.PI*2); ctx.strokeStyle=`rgba(255,255,255,${1-p})`; ctx.lineWidth=2; ctx.stroke(); } }
+  function draw(){ ctx.globalAlpha=0.18; ctx.fillStyle='#0f1220'; ctx.fillRect(0,0,W,H); ctx.globalAlpha=1; drawStars(); var hx=state.hole.x(), hy=state.hole.y(), hr=state.hole.r(); ctx.save(); var grd=ctx.createRadialGradient(hx,hy,hr*0.2,hx,hy,hr); grd.addColorStop(0,'rgba(157,255,106,0.35)'); grd.addColorStop(1,'rgba(106,231,255,0.12)'); ctx.fillStyle=grd; ctx.beginPath(); ctx.arc(hx,hy, hr+10, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(hx,hy, hr, 0, Math.PI*2); ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fill(); ctx.strokeStyle='rgba(106,231,255,0.6)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(hx,hy, hr-6, 0, Math.PI*2); ctx.stroke(); ctx.restore(); ctx.fillStyle='#8B4513'; for (const b of state.balls){ if(!b.alive) continue; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); } }
 
   function loop(){ step(); draw(); requestAnimationFrame(loop); }
   loop();
